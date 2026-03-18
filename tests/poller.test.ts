@@ -25,6 +25,7 @@ const mockPlayers = [
 const baseGameState: GameState = {
   champion: 'Zed',
   role: 'MID',
+  gameMode: 'CLASSIC',
   gameTime: '10:00',
   kills: 5,
   deaths: 1,

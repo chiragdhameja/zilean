@@ -52,6 +52,7 @@ async function runGameLoop(
 const mockGameState: GameState = {
   champion: 'Zed',
   role: 'MID',
+  gameMode: 'CLASSIC',
   gameTime: '10:00',
   kills: 3,
   deaths: 1,
@@ -64,7 +65,9 @@ const mockGameState: GameState = {
 
 const mockGoals: CoachingGoals = {
   personalGoals: ['Focus on CS', 'Track jungler'],
+  personalTag: 'Farm',
   teamGoals: ['Contest dragon', 'Rotate mid'],
+  teamTag: 'Dragon',
   gamePhase: 'early',
   updatedAt: '10:00'
 }
@@ -111,7 +114,9 @@ describe('gameLoop integration', () => {
     generateCoaching.mockRejectedValueOnce(new Error('API error'))
     const prevGoals: CoachingGoals = {
       personalGoals: ['Old goal 1', 'Old goal 2'],
+      personalTag: 'Farm',
       teamGoals: ['Old team 1', 'Old team 2'],
+      teamTag: 'Rotate',
       gamePhase: 'early',
       updatedAt: '9:00'
     }

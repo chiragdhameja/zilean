@@ -7,6 +7,7 @@ interface ElectronAPI {
   saveSettings: (settings: AppSettings) => Promise<{ success: boolean }>
   toggleOverlay: () => Promise<void>
   onCoachingUpdate: (callback: (update: CoachingUpdate) => void) => () => void
+  resizeOverlay: (height: number) => void
 }
 
 declare global {

@@ -17,12 +17,13 @@ import { GameState, CoachingGoals, CoachingUpdate } from '../../shared/types'
 
 dotenv.config()
 
-const FORCE_INTERVAL_MS = 180_000 // 3 minutes
+const FORCE_INTERVAL_MS = 120_000 // 2 minutes
 
 let mainWindow: BrowserWindow | null = null
 let overlayWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+let hoverPollTimer: NodeJS.Timeout | null = null
 
 let cachedGoals: CoachingGoals | null = null
 let prevState: GameState | null = null
@@ -52,11 +53,11 @@ function createMainWindow(): BrowserWindow {
 function createOverlayWindow(): BrowserWindow {
   const { width: workW } = screen.getPrimaryDisplay().workAreaSize
   const OVERLAY_WIDTH = 300
-  const OVERLAY_HEIGHT = 400
+  const OVERLAY_HEIGHT = 50
 
   const win = new BrowserWindow({
     x: workW - OVERLAY_WIDTH - 20,
-    y: 20,
+    y: 50,
     width: OVERLAY_WIDTH,
     height: OVERLAY_HEIGHT,
     transparent: true,
@@ -175,19 +176,27 @@ async function handleGameState(gameState: GameState | null): Promise<void> {
 
   prevState = gameState
 
+  const meta = { champion: gameState.champion, gameMode: gameState.gameMode }
+
   try {
     const goals = await generateCoaching(gameState)
     cachedGoals = goals
     lastCoachTime = Date.now()
-    sendOverlayUpdate({ status: 'active', goals })
+    sendOverlayUpdate({ status: 'active', goals, ...meta })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[main] Coach error:', message)
-    sendOverlayUpdate({ status: 'error', goals: cachedGoals, error: message })
+    sendOverlayUpdate({ status: 'error', goals: cachedGoals, error: message, ...meta })
   }
 }
 
 function registerIpcHandlers(): void {
+  ipcMain.on('resize-overlay', (_event, height: number) => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.setContentSize(300, Math.max(50, Math.ceil(height)))
+    }
+  })
+
   ipcMain.handle('get-settings', () => loadSettings())
 
   ipcMain.handle('save-settings', (_event, settings) => {
@@ -223,6 +232,20 @@ app.whenReady().then(() => {
   createTray()
   registerIpcHandlers()
 
+  // Toggle mouse passthrough so overlay sections are clickable when hovered
+  let overlayInteractive = false
+  hoverPollTimer = setInterval(() => {
+    if (!overlayWindow || overlayWindow.isDestroyed() || !overlayWindow.isVisible()) return
+    const cursor = screen.getCursorScreenPoint()
+    const bounds = overlayWindow.getBounds()
+    const isOver = cursor.x >= bounds.x && cursor.x <= bounds.x + bounds.width &&
+                   cursor.y >= bounds.y && cursor.y <= bounds.y + bounds.height
+    if (isOver !== overlayInteractive) {
+      overlayInteractive = isOver
+      overlayWindow.setIgnoreMouseEvents(!isOver, { forward: true })
+    }
+  }, 100)
+
   // Register global shortcuts
   globalShortcut.register('Alt+C', () => {
     if (overlayWindow) {
@@ -248,6 +271,7 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   stopPolling()
+  if (hoverPollTimer) clearInterval(hoverPollTimer)
   globalShortcut.unregisterAll()
 })
 

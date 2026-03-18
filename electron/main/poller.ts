@@ -18,6 +18,7 @@ interface RiotPlayerData {
 
 interface RiotGameData {
   gameTime: number
+  gameMode: string
   events: { Events: RiotEvent[] }
   allPlayers: RiotPlayerData[]
   activePlayer: {
@@ -66,6 +67,7 @@ async function fetchAllData(): Promise<RiotGameData | null> {
 
     return {
       gameTime: gameData.gameTime ?? gameData.gameLength ?? 0,
+      gameMode: gameData.gameMode ?? 'CLASSIC',
       events: { Events: eventsList },
       allPlayers,
       activePlayer
@@ -133,6 +135,9 @@ export function detectMeaningfulChange(
 
   if (Math.abs(next.teamGoldDiff - prev.teamGoldDiff) > GOLD_DIFF_THRESHOLD) return true
 
+  // Item purchased: player spent 350+ gold (minimum component cost, excludes consumables)
+  if (prev.gold - next.gold >= 350) return true
+
   return false
 }
 
@@ -178,6 +183,7 @@ async function poll(callback: (state: GameState | null) => void): Promise<void> 
     const gameState: GameState = {
       champion: activePlayerFull.championName,
       role: activePlayerFull.position || 'UNKNOWN',
+      gameMode: data.gameMode,
       gameTime: formatGameTime(data.gameTime),
       kills: activePlayerFull.scores.kills,
       deaths: activePlayerFull.scores.deaths,

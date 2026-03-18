@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { GameState } from '../shared/types'
+import type { GameState, CoachingGoals } from '../shared/types'
 
 // Mock @anthropic-ai/sdk before importing coach
 vi.mock('@anthropic-ai/sdk', () => {
@@ -27,13 +27,15 @@ const mockGameState: GameState = {
 
 const validResponse = {
   personalGoals: ['Focus on last-hitting under tower', 'Track enemy jungler'],
+  personalTag: 'Farm',
   teamGoals: ['Contest dragon at 12 min', 'Push mid after skirmish'],
+  teamTag: 'Dragon',
   gamePhase: 'early' as const,
   updatedAt: '10:00'
 }
 
 describe('generateCoaching', () => {
-  let generateCoaching: (state: GameState, ctx?: string) => Promise<unknown>
+  let generateCoaching: (state: GameState, ctx?: string) => Promise<CoachingGoals>
   let mockCreate: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
@@ -110,6 +112,55 @@ describe('generateCoaching', () => {
 
     const result = await generateCoaching(mockGameState)
     expect(result.personalGoals.length).toBe(2)
+  })
+
+  it('accepts optional item field when valid', async () => {
+    const withItem = {
+      ...validResponse,
+      item: { name: "Serylda's Grudge", reason: 'enemies stacking armor', goldNeeded: 400 }
+    }
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(withItem) }]
+    })
+
+    const result = await generateCoaching(mockGameState)
+    expect(result).toMatchObject({
+      item: { name: "Serylda's Grudge", reason: 'enemies stacking armor', goldNeeded: 400 }
+    })
+  })
+
+  it('accepts optional backTiming field when valid', async () => {
+    const withBackTiming = {
+      ...validResponse,
+      backTiming: { suggestion: 'Back after next wave', goldTarget: 1840 }
+    }
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(withBackTiming) }]
+    })
+
+    const result = await generateCoaching(mockGameState)
+    expect(result).toMatchObject({
+      backTiming: { suggestion: 'Back after next wave', goldTarget: 1840 }
+    })
+  })
+
+  it('is valid when item and backTiming are absent', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(validResponse) }]
+    })
+
+    const result = await generateCoaching(mockGameState)
+    expect(result.item).toBeUndefined()
+    expect(result.backTiming).toBeUndefined()
+  })
+
+  it('throws on malformed item field', async () => {
+    const badItem = { ...validResponse, item: { name: 'Blade', goldNeeded: 'lots' } }
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(badItem) }]
+    })
+
+    await expect(generateCoaching(mockGameState)).rejects.toThrow('item')
   })
 
   it('includes historicalContext in prompt when provided', async () => {

@@ -14,5 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       callback(update)
     ipcRenderer.on('coaching-update', handler)
     return () => ipcRenderer.removeListener('coaching-update', handler)
-  }
+  },
+
+  resizeOverlay: (height: number): void => ipcRenderer.send('resize-overlay', height)
 })

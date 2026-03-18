@@ -6,7 +6,8 @@ export function Settings(): JSX.Element {
   const [settings, setSettings] = useState<AppSettings>({
     anthropicApiKey: '',
     overlayVisible: true,
-    summonerName: ''
+    summonerName: '',
+    overlayTheme: 'lol-native'
   })
   const [saved, setSaved] = useState(false)
   const [apiKeyInput, setApiKeyInput] = useState('')
@@ -68,6 +69,19 @@ export function Settings(): JSX.Element {
           <span className="settings-value">{settings.summonerName}</span>
         </div>
       )}
+
+      <div className="settings-group">
+        <label>Overlay Theme</label>
+        <select
+          value={settings.overlayTheme}
+          onChange={(e) => setSettings({ ...settings, overlayTheme: e.target.value as AppSettings['overlayTheme'] })}
+          className="settings-input"
+        >
+          <option value="lol-native">LoL Native Dark</option>
+          <option value="minimal" disabled>Minimal Pills (coming soon)</option>
+          <option value="sidebar" disabled>Sidebar (coming soon)</option>
+        </select>
+      </div>
 
       <div className="settings-group settings-v2-placeholder">
         <label className="label-disabled">Riot API Key (V2)</label>

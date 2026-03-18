@@ -1,10 +1,18 @@
+html, body {
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
 .overlay-card {
-  background: rgba(10, 10, 15, 0.82);
-  border-radius: 10px;
+  background: rgba(5, 8, 18, 0.88);
+  border: 1px solid rgba(200, 155, 60, 0.35);
+  border-radius: 6px;
   width: 300px;
   font-family: system-ui, -apple-system, sans-serif;
   color: #fff;
-  padding: 14px;
+  padding: 12px 14px;
   box-sizing: border-box;
   user-select: none;
 }
@@ -13,68 +21,180 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   color: #c89b3c;
-  margin-bottom: 10px;
-  letter-spacing: 0.5px;
+  letter-spacing: 2px;
   text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.overlay-header--clickable {
+  cursor: pointer;
+}
+
+.overlay-header--clickable:hover {
+  opacity: 0.8;
+}
+
+.header-chevron {
+  color: rgba(200, 155, 60, 0.55);
+  font-size: 9px;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.overlay-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.overlay-divider {
+  border: none;
+  border-top: 1px solid rgba(200, 155, 60, 0.2);
+  margin: 8px 0;
 }
 
 .overlay-waiting {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
   text-align: center;
-  padding: 20px 0;
+  padding: 16px 0;
 }
 
 .goals-section {
-  margin-bottom: 10px;
+  margin-bottom: 2px;
 }
 
 .goals-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.4);
+  font-size: 9px;
+  font-weight: 700;
+  color: #c89b3c;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 4px;
+  letter-spacing: 2px;
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 5px;
+}
+
+.section-header:hover .goals-label {
+  opacity: 0.75;
+}
+
+.section-tag {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.section-chevron {
+  color: rgba(200, 155, 60, 0.55);
+  font-size: 9px;
+  flex-shrink: 0;
 }
 
 .goal-item {
   font-size: 12px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.88);
-  padding: 2px 0;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.92);
+  padding: 1px 0;
+}
+
+.goal-item::before {
+  content: '› ';
+  color: rgba(200, 155, 60, 0.6);
 }
 
 .overlay-footer {
   display: flex;
   gap: 8px;
   align-items: center;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 10px;
 }
 
 .phase-badge {
-  background: rgba(200, 155, 60, 0.2);
+  background: rgba(200, 155, 60, 0.15);
   color: #c89b3c;
-  border-radius: 4px;
-  padding: 1px 6px;
+  border: 1px solid rgba(200, 155, 60, 0.4);
+  border-radius: 10px;
+  padding: 1px 8px;
   text-transform: capitalize;
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.5px;
 }
 
 .updated-at {
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.3);
   margin-left: auto;
+  font-size: 10px;
 }
 
 .error-badge {
   color: #ff4444;
   font-size: 11px;
+}
+
+/* Item suggestion section */
+.item-section {
+  margin-bottom: 2px;
+}
+
+.item-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #4fc3a1;
+}
+
+.item-reason {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.item-gold-pill {
+  display: inline-block;
+  background: rgba(200, 155, 60, 0.12);
+  border: 1px solid rgba(200, 155, 60, 0.3);
+  color: #c89b3c;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  margin-top: 3px;
+}
+
+/* Back timing section */
+.back-section {
+  margin-bottom: 2px;
+}
+
+.back-suggestion {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.back-gold-pill {
+  display: inline-block;
+  background: rgba(240, 192, 96, 0.1);
+  border: 1px solid rgba(240, 192, 96, 0.35);
+  color: #f0c060;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  margin-top: 3px;
 }
 
 @keyframes pulse {

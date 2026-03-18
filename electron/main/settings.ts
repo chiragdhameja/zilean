@@ -6,7 +6,8 @@ import { AppSettings } from '../../shared/types'
 const DEFAULT_SETTINGS: AppSettings = {
   anthropicApiKey: '',
   overlayVisible: true,
-  summonerName: ''
+  summonerName: '',
+  overlayTheme: 'lol-native'
 }
 
 function getSettingsPath(): string {
