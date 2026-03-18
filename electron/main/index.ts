@@ -10,10 +10,11 @@ import {
 } from 'electron'
 import * as path from 'path'
 import * as dotenv from 'dotenv'
-import { startPolling, stopPolling, detectMeaningfulChange } from './poller'
+import { startPolling, stopPolling, detectMeaningfulChange, pollEvents, resetEventState, triggerPoll, EVENT_POLL_INTERVAL_MS } from './poller'
 import { generateCoaching } from './coach'
 import { loadSettings, saveSettings, storeSummonerName } from './settings'
-import { GameState, CoachingGoals, CoachingUpdate } from '../../shared/types'
+import { dumpSwagger } from './swaggerDump'
+import { GameState, GameEvent, CoachingGoals, CoachingUpdate, EventsUpdate } from '../../shared/types'
 
 dotenv.config()
 
@@ -28,6 +29,13 @@ let hoverPollTimer: NodeJS.Timeout | null = null
 let cachedGoals: CoachingGoals | null = null
 let prevState: GameState | null = null
 let lastCoachTime = 0
+let allGameEvents: GameEvent[] = []
+let eventPollTimer: NodeJS.Timeout | null = null
+
+// Event-triggered coaching: minimum gap between event-driven coach calls
+const EVENT_COACH_COOLDOWN_MS = 45_000
+const SIGNIFICANT_EVENTS = new Set(['ChampionKill', 'FirstBlood', 'DragonKill', 'BaronKill', 'InhibitorKilled'])
+let lastEventCoachTime = 0
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -149,9 +157,44 @@ function sendOverlayUpdate(update: CoachingUpdate): void {
   }
 }
 
+function broadcastEventsUpdate(events: GameEvent[]): void {
+  const update: EventsUpdate = { events: events.slice(-20) }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('events-update', update)
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.webContents.send('events-update', update)
+  }
+}
+
+function startEventPolling(): void {
+  if (eventPollTimer) return
+  eventPollTimer = setInterval(async () => {
+    const newEvents = await pollEvents()
+    if (newEvents.length > 0) {
+      allGameEvents = [...allGameEvents, ...newEvents].slice(-100)
+      broadcastEventsUpdate(allGameEvents)
+
+      // Trigger immediate coaching update when significant events occur
+      const hasSignificant = newEvents.some((e) => SIGNIFICANT_EVENTS.has(e.name))
+      if (hasSignificant && Date.now() - lastEventCoachTime > EVENT_COACH_COOLDOWN_MS) {
+        lastEventCoachTime = Date.now()
+        console.log('[main] Significant event detected — triggering immediate coaching update')
+        triggerPoll(handleGameState)
+      }
+    }
+  }, EVENT_POLL_INTERVAL_MS)
+}
+
 async function handleGameState(gameState: GameState | null): Promise<void> {
   if (!gameState) {
     sendOverlayUpdate({ status: 'waiting' })
+    if (prevState !== null) {
+      // Game just ended — reset event state and clear feed
+      allGameEvents = []
+      resetEventState()
+      broadcastEventsUpdate([])
+    }
     prevState = null
     lastCoachTime = 0
     return
@@ -213,6 +256,18 @@ function registerIpcHandlers(): void {
       overlayWindow.isVisible() ? overlayWindow.hide() : overlayWindow.show()
     }
   })
+
+  // Dev-only: dump live Swagger spec from the running game client
+  ipcMain.handle('dump-swagger', async () => {
+    try {
+      await dumpSwagger()
+      return { success: true }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[main] dump-swagger failed:', message)
+      return { success: false, error: message }
+    }
+  })
 }
 
 app.whenReady().then(() => {
@@ -257,8 +312,9 @@ app.whenReady().then(() => {
     settingsWindow = createSettingsWindow()
   })
 
-  // Start the game polling loop
+  // Start the game polling loops
   startPolling(handleGameState)
+  startEventPolling()
 
   // Initial waiting state
   setTimeout(() => sendOverlayUpdate({ status: 'waiting' }), 1000)
@@ -271,6 +327,7 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   stopPolling()
+  if (eventPollTimer) clearInterval(eventPollTimer)
   if (hoverPollTimer) clearInterval(hoverPollTimer)
   globalShortcut.unregisterAll()
 })

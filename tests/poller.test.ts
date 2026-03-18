@@ -1,10 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import {
   extractRecentEvents,
   computeTeamGoldDiff,
-  detectMeaningfulChange
+  detectMeaningfulChange,
+  formatRelativeTime,
+  findLaneOpponent,
+  computeEventDetail
 } from '../electron/main/poller'
-import type { GameState } from '../shared/types'
+import type { GameState, GameEvent } from '../shared/types'
 
 // Fixtures
 const mockEvents = [
@@ -16,11 +19,21 @@ const mockEvents = [
 ]
 
 const mockPlayers = [
-  { summonerName: 'TestPlayer', team: 'ORDER', currentGold: 3000, championName: 'Zed', position: 'MID', scores: { kills: 5, deaths: 1, assists: 2 } },
-  { summonerName: 'Ally2', team: 'ORDER', currentGold: 2500, championName: 'Jinx', position: 'BOT', scores: { kills: 3, deaths: 0, assists: 4 } },
-  { summonerName: 'Enemy1', team: 'CHAOS', currentGold: 2000, championName: 'Ahri', position: 'MID', scores: { kills: 2, deaths: 2, assists: 1 } },
-  { summonerName: 'Enemy2', team: 'CHAOS', currentGold: 1800, championName: 'Caitlyn', position: 'BOT', scores: { kills: 1, deaths: 3, assists: 0 } }
+  { summonerName: 'TestPlayer', team: 'ORDER', currentGold: 3000, championName: 'Zed', position: 'MID', scores: { kills: 5, deaths: 1, assists: 2 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Ignite' } } },
+  { summonerName: 'Ally2', team: 'ORDER', currentGold: 2500, championName: 'Jinx', position: 'BOT', scores: { kills: 3, deaths: 0, assists: 4 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Heal' } } },
+  { summonerName: 'Enemy1', team: 'CHAOS', currentGold: 2000, championName: 'Ahri', position: 'MID', scores: { kills: 2, deaths: 2, assists: 1 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Ignite' } } },
+  { summonerName: 'Enemy2', team: 'CHAOS', currentGold: 1800, championName: 'Caitlyn', position: 'BOT', scores: { kills: 1, deaths: 3, assists: 0 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Heal' } } }
 ]
+
+const makeEvent = (name: string, time: number, relativeTime: string): GameEvent => ({
+  name,
+  time,
+  relativeTime,
+  category: name === 'DragonKill' || name === 'BaronKill' ? 'objective'
+    : name === 'TurretKilled' ? 'structure'
+    : name === 'ChampionKill' || name === 'FirstBlood' ? 'kill'
+    : 'game'
+})
 
 const baseGameState: GameState = {
   champion: 'Zed',
@@ -32,18 +45,55 @@ const baseGameState: GameState = {
   assists: 2,
   gold: 3000,
   teamGoldDiff: 1700,
-  recentEvents: ['DragonKill', 'TurretKilled'],
-  summonerName: 'TestPlayer'
+  recentEvents: [
+    makeEvent('DragonKill', 540, '2m 0s ago'),
+    makeEvent('TurretKilled', 550, '1m 50s ago')
+  ],
+  summonerName: 'TestPlayer',
+  items: [],
+  abilities: {
+    q: { displayName: 'Razor Shuriken', level: 3 },
+    w: { displayName: 'Living Shadow', level: 1 },
+    e: { displayName: 'Shadow Slash', level: 2 },
+    r: { displayName: 'Death Mark', level: 1 },
+    passive: { displayName: 'Contempt for the Weak' }
+  },
+  runes: { keystone: 'Electrocute', primaryTree: 'Domination', secondaryTree: 'Sorcery' },
+  summonerSpells: { spell1: 'Flash', spell2: 'Ignite' },
+  laneOpponent: { championName: 'Ahri', kills: 2, deaths: 2, assists: 1 },
+  allies: [{ championName: 'Jinx', items: [], level: 8 }],
+  enemies: [{ championName: 'Ahri', items: [], level: 8 }, { championName: 'Caitlyn', items: [], level: 7 }]
 }
 
 describe('extractRecentEvents', () => {
   it('returns only relevant events within last 120s', () => {
     const result = extractRecentEvents(mockEvents, 420)
-    expect(result).toContain('DragonKill')
-    expect(result).toContain('TurretKilled')
-    expect(result).toContain('BaronKill')
-    expect(result).toContain('ChampionKill')
-    expect(result).not.toContain('MinionsSpawning')
+    const names = result.map((e) => e.name)
+    expect(names).toContain('DragonKill')
+    expect(names).toContain('TurretKilled')
+    expect(names).toContain('BaronKill')
+    expect(names).toContain('ChampionKill')
+    expect(names).not.toContain('MinionsSpawning')
+  })
+
+  it('returns GameEvent objects with correct shape', () => {
+    const result = extractRecentEvents(mockEvents, 420)
+    for (const e of result) {
+      expect(e).toHaveProperty('name')
+      expect(e).toHaveProperty('time')
+      expect(e).toHaveProperty('relativeTime')
+      expect(e).toHaveProperty('category')
+    }
+  })
+
+  it('assigns correct categories', () => {
+    const result = extractRecentEvents(mockEvents, 420)
+    const dragon = result.find((e) => e.name === 'DragonKill')
+    expect(dragon?.category).toBe('objective')
+    const turret = result.find((e) => e.name === 'TurretKilled')
+    expect(turret?.category).toBe('structure')
+    const kill = result.find((e) => e.name === 'ChampionKill')
+    expect(kill?.category).toBe('kill')
   })
 
   it('returns at most 10 events', () => {
@@ -58,7 +108,51 @@ describe('extractRecentEvents', () => {
   it('excludes events older than 120 seconds', () => {
     const result = extractRecentEvents(mockEvents, 500)
     // DragonKill at 300, gameTime 500 → 200s ago → excluded
-    expect(result).not.toContain('DragonKill')
+    const names = result.map((e) => e.name)
+    expect(names).not.toContain('DragonKill')
+  })
+
+  it('excludes untracked event types like MinionsSpawning', () => {
+    const result = extractRecentEvents(
+      [{ EventName: 'MinionsSpawning', EventTime: 60 }],
+      120
+    )
+    expect(result).toHaveLength(0)
+  })
+
+  it('includes all tracked event types', () => {
+    const allTracked = [
+      { EventName: 'DragonKill', EventTime: 0 },
+      { EventName: 'BaronKill', EventTime: 0 },
+      { EventName: 'TurretKilled', EventTime: 0 },
+      { EventName: 'ChampionKill', EventTime: 0 },
+      { EventName: 'InhibitorKilled', EventTime: 0 },
+      { EventName: 'ItemPurchased', EventTime: 0 },
+      { EventName: 'WardPlaced', EventTime: 0 },
+      { EventName: 'WardKilled', EventTime: 0 },
+      { EventName: 'FirstBlood', EventTime: 0 },
+      { EventName: 'GameStart', EventTime: 0 }
+    ]
+    const result = extractRecentEvents(allTracked, 100)
+    expect(result.length).toBe(10)
+  })
+})
+
+describe('formatRelativeTime', () => {
+  it('formats sub-minute diff as seconds', () => {
+    expect(formatRelativeTime(300, 308)).toBe('8s ago')
+  })
+
+  it('formats multi-minute diff correctly', () => {
+    expect(formatRelativeTime(0, 135)).toBe('2m 15s ago')
+  })
+
+  it('returns 0s ago when event time equals current time', () => {
+    expect(formatRelativeTime(500, 500)).toBe('0s ago')
+  })
+
+  it('clamps negative diff to 0', () => {
+    expect(formatRelativeTime(600, 500)).toBe('0s ago')
   })
 })
 
@@ -75,16 +169,142 @@ describe('computeTeamGoldDiff', () => {
   })
 
   it('computes negative diff when enemy team is ahead', () => {
-    // Give enemies more gold than allies
     const enemyAheadPlayers = [
-      { summonerName: 'TestPlayer', team: 'ORDER', currentGold: 1000, championName: 'Zed', position: 'MID', scores: { kills: 0, deaths: 3, assists: 0 } },
-      { summonerName: 'Ally2', team: 'ORDER', currentGold: 800, championName: 'Jinx', position: 'BOT', scores: { kills: 1, deaths: 2, assists: 1 } },
-      { summonerName: 'Enemy1', team: 'CHAOS', currentGold: 3000, championName: 'Ahri', position: 'MID', scores: { kills: 5, deaths: 0, assists: 3 } },
-      { summonerName: 'Enemy2', team: 'CHAOS', currentGold: 2500, championName: 'Caitlyn', position: 'BOT', scores: { kills: 4, deaths: 0, assists: 2 } }
+      { summonerName: 'TestPlayer', team: 'ORDER', currentGold: 1000, championName: 'Zed', position: 'MID', scores: { kills: 0, deaths: 3, assists: 0 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Ignite' } } },
+      { summonerName: 'Ally2', team: 'ORDER', currentGold: 800, championName: 'Jinx', position: 'BOT', scores: { kills: 1, deaths: 2, assists: 1 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Heal' } } },
+      { summonerName: 'Enemy1', team: 'CHAOS', currentGold: 3000, championName: 'Ahri', position: 'MID', scores: { kills: 5, deaths: 0, assists: 3 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Ignite' } } },
+      { summonerName: 'Enemy2', team: 'CHAOS', currentGold: 2500, championName: 'Caitlyn', position: 'BOT', scores: { kills: 4, deaths: 0, assists: 2 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Heal' } } }
     ]
     const diff = computeTeamGoldDiff(enemyAheadPlayers, 'TestPlayer')
     // ORDER: 1000+800=1800, CHAOS: 3000+2500=5500 → diff = -3700
     expect(diff).toBe(-3700)
+  })
+})
+
+describe('findLaneOpponent', () => {
+  it('returns the enemy player with the same position', () => {
+    const result = findLaneOpponent(mockPlayers, 'TestPlayer')
+    expect(result).not.toBeNull()
+    expect(result?.championName).toBe('Ahri')
+    expect(result?.kills).toBe(2)
+    expect(result?.deaths).toBe(2)
+    expect(result?.assists).toBe(1)
+  })
+
+  it('returns null for ARAM (empty position strings)', () => {
+    const aramPlayers = mockPlayers.map((p) => ({ ...p, position: '' }))
+    const result = findLaneOpponent(aramPlayers, 'TestPlayer')
+    expect(result).toBeNull()
+  })
+
+  it('returns null when summoner is not found', () => {
+    const result = findLaneOpponent(mockPlayers, 'UnknownPlayer')
+    expect(result).toBeNull()
+  })
+
+  it('returns null when no enemy has the same position', () => {
+    const mismatchPlayers = mockPlayers.map((p, i) =>
+      i === 2 ? { ...p, position: 'TOP' } : p  // Enemy1 now plays TOP instead of MID
+    )
+    const result = findLaneOpponent(mismatchPlayers, 'TestPlayer')
+    expect(result).toBeNull()
+  })
+
+  it('does not match teammates', () => {
+    const result = findLaneOpponent(mockPlayers, 'TestPlayer')
+    // Ally2 is also ORDER team — must not be returned
+    expect(result?.championName).not.toBe('Jinx')
+  })
+})
+
+describe('computeEventDetail', () => {
+  const summonerName = 'TestPlayer'
+  const allyNames = new Set(['Ally2'])
+  const championMap = new Map([
+    ['TestPlayer', 'Zed'],
+    ['Ally2', 'Jinx'],
+    ['Enemy1', 'Ahri'],
+    ['Enemy2', 'Caitlyn']
+  ])
+
+  it('returns "You killed [champion]" when active player is the killer', () => {
+    const detail = computeEventDetail(
+      { EventName: 'ChampionKill', EventTime: 300, KillerName: 'TestPlayer', VictimName: 'Enemy1' },
+      summonerName, allyNames, championMap
+    )
+    expect(detail).toBe('You killed Ahri')
+  })
+
+  it('returns "Killed by [champion]" when active player is the victim', () => {
+    const detail = computeEventDetail(
+      { EventName: 'ChampionKill', EventTime: 300, KillerName: 'Enemy1', VictimName: 'TestPlayer' },
+      summonerName, allyNames, championMap
+    )
+    expect(detail).toBe('Killed by Ahri')
+  })
+
+  it('returns "Ally [champ] killed by [champ]" when an ally is the victim', () => {
+    const detail = computeEventDetail(
+      { EventName: 'ChampionKill', EventTime: 300, KillerName: 'Enemy1', VictimName: 'Ally2' },
+      summonerName, allyNames, championMap
+    )
+    expect(detail).toBe('Ally Jinx killed by Ahri')
+  })
+
+  it('returns "Ally [champ] killed [champ]" when an ally is the killer', () => {
+    const detail = computeEventDetail(
+      { EventName: 'ChampionKill', EventTime: 300, KillerName: 'Ally2', VictimName: 'Enemy2' },
+      summonerName, allyNames, championMap
+    )
+    expect(detail).toBe('Ally Jinx killed Caitlyn')
+  })
+
+  it('falls back to summoner name when no championMap provided', () => {
+    const detail = computeEventDetail(
+      { EventName: 'ChampionKill', EventTime: 300, KillerName: 'Enemy1', VictimName: 'TestPlayer' },
+      summonerName, allyNames
+    )
+    expect(detail).toBe('Killed by Enemy1')
+  })
+
+  it('prefixes First Blood correctly', () => {
+    const detail = computeEventDetail(
+      { EventName: 'FirstBlood', EventTime: 100, Acer: 'TestPlayer', VictimName: 'Enemy1' },
+      summonerName, allyNames, championMap
+    )
+    expect(detail).toBe('First Blood: You killed Ahri')
+  })
+
+  it('returns "Ally team took X Dragon" for ally dragon kill', () => {
+    const detail = computeEventDetail(
+      { EventName: 'DragonKill', EventTime: 300, KillerName: 'TestPlayer', DragonType: 'Fire', Stolen: 'False' },
+      summonerName, allyNames, championMap
+    )
+    expect(detail).toBe('Ally team took Fire Dragon')
+  })
+
+  it('returns "Enemy team stole Baron!" for stolen baron', () => {
+    const detail = computeEventDetail(
+      { EventName: 'BaronKill', EventTime: 1200, KillerName: 'Enemy1', Stolen: 'True' },
+      summonerName, allyNames, championMap
+    )
+    expect(detail).toBe('Enemy team stole Baron!')
+  })
+
+  it('returns team-aware turret detail', () => {
+    const detail = computeEventDetail(
+      { EventName: 'TurretKilled', EventTime: 500, KillerName: 'Ally2' },
+      summonerName, allyNames, championMap
+    )
+    expect(detail).toBe('Ally team destroyed a turret')
+  })
+
+  it('returns undefined for unhandled event types', () => {
+    const detail = computeEventDetail(
+      { EventName: 'WardPlaced', EventTime: 120 },
+      summonerName, allyNames
+    )
+    expect(detail).toBeUndefined()
   })
 })
 
@@ -104,7 +324,13 @@ describe('detectMeaningfulChange', () => {
   })
 
   it('returns true on new DragonKill event', () => {
-    const next = { ...baseGameState, recentEvents: ['DragonKill', 'TurretKilled', 'BaronKill'] }
+    const next = {
+      ...baseGameState,
+      recentEvents: [
+        ...baseGameState.recentEvents,
+        makeEvent('BaronKill', 600, '0s ago')
+      ]
+    }
     expect(detectMeaningfulChange(baseGameState, next)).toBe(true)
   })
 

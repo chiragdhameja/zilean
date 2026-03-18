@@ -197,6 +197,51 @@ html, body {
   margin-top: 3px;
 }
 
+/* Matchup tip */
+.matchup-tip {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  font-style: italic;
+  line-height: 1.4;
+  margin-bottom: 2px;
+}
+
+/* Event feed */
+.event-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.event-item {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.event-icon {
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.event-name {
+  color: rgba(255, 255, 255, 0.88);
+  font-weight: 500;
+}
+
+.event-time {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.event-feed-empty {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  text-align: center;
+  padding: 4px 0;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }

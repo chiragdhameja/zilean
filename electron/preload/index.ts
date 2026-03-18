@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { AppSettings, CoachingUpdate } from '../../shared/types'
+import { AppSettings, CoachingUpdate, EventsUpdate } from '../../shared/types'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('get-settings'),
@@ -16,5 +16,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('coaching-update', handler)
   },
 
-  resizeOverlay: (height: number): void => ipcRenderer.send('resize-overlay', height)
+  resizeOverlay: (height: number): void => ipcRenderer.send('resize-overlay', height),
+
+  onEventsUpdate: (callback: (update: EventsUpdate) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, update: EventsUpdate): void =>
+      callback(update)
+    ipcRenderer.on('events-update', handler)
+    return () => ipcRenderer.removeListener('events-update', handler)
+  },
+
+  dumpSwagger: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('dump-swagger')
 })

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { GameState, CoachingGoals, CoachingUpdate } from '../../shared/types'
 
 // We test the orchestration logic in isolation, not the Electron windows
@@ -60,7 +60,20 @@ const mockGameState: GameState = {
   gold: 2500,
   teamGoldDiff: 300,
   recentEvents: [],
-  summonerName: 'TestPlayer'
+  summonerName: 'TestPlayer',
+  items: [],
+  abilities: {
+    q: { displayName: 'Razor Shuriken', level: 2 },
+    w: { displayName: 'Living Shadow', level: 1 },
+    e: { displayName: 'Shadow Slash', level: 1 },
+    r: { displayName: 'Death Mark', level: 0 },
+    passive: { displayName: 'Contempt for the Weak' }
+  },
+  runes: { keystone: 'Electrocute', primaryTree: 'Domination', secondaryTree: 'Sorcery' },
+  summonerSpells: { spell1: 'Flash', spell2: 'Ignite' },
+  laneOpponent: null,
+  allies: [],
+  enemies: []
 }
 
 const mockGoals: CoachingGoals = {
@@ -69,7 +82,8 @@ const mockGoals: CoachingGoals = {
   teamGoals: ['Contest dragon', 'Rotate mid'],
   teamTag: 'Dragon',
   gamePhase: 'early',
-  updatedAt: '10:00'
+  updatedAt: '10:00',
+  matchupTip: 'Focus on farming safely and outscale in mid game.'
 }
 
 describe('gameLoop integration', () => {
@@ -118,13 +132,15 @@ describe('gameLoop integration', () => {
       teamGoals: ['Old team 1', 'Old team 2'],
       teamTag: 'Rotate',
       gamePhase: 'early',
-      updatedAt: '9:00'
+      updatedAt: '9:00',
+      matchupTip: 'Play safe and scale for late game.'
     }
     loopState.cachedGoals = prevGoals
 
     await runGameLoop(mockGameState, loopState, generateCoaching, storeSummonerName, detectMeaningfulChange, sendUpdate)
     expect(sendUpdate).toHaveBeenCalledWith({ status: 'error', goals: prevGoals })
   })
+
 
   it('does NOT call coach when no meaningful change and <3min elapsed', async () => {
     detectMeaningfulChange.mockReturnValue(false)

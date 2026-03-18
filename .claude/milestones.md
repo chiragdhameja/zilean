@@ -8,15 +8,20 @@
 - [x] P5: Wired loop + integration tests
 - [x] P6: Settings + Docker scaffold + config files
 
+## Live Data Enhancement (Pre-V2)
+- [x] P0: Event feed — fast polling (5s) + overlay + main window reactive event stream
+- [x] P-docs: Local API reference doc (`docs/riot-live-client-api.md`) + Swagger capture utility (`electron/main/swaggerDump.ts`)
+- [x] P0.5: Items, abilities, runes, summoner spells, lane opponent, matchupTip coaching
+
 ## V2 — Historical Analysis + RAG
-- [ ] Riot Match-V5 fetcher (history.ts)
-- [ ] Per-game analyzer — extract stats + generate summary (analyzer.ts)
-- [ ] pgvector DB wired — embed + store summaries
-- [ ] Intelligent similarity search — archetype/role/game-phase aware (rag.ts)
-- [ ] RAG context injected into Claude prompt
-- [ ] Repeat mistake detection + toast alerts
-- [ ] Main window "Analyze My Games" UI
-- [ ] Incremental analysis (only fetch new games)
+- [ ] P1: DB schema + pgvector setup
+- [ ] P2: Riot Match-V5 fetcher (TDD)
+- [ ] P3: Per-game analyzer — stats + AI summary (TDD)
+- [ ] P4: Embedding + storage pipeline
+- [ ] P5: RAG retrieval + coach prompt injection (TDD)
+- [ ] P6: Repeat mistake detection + toast alerts (TDD)
+- [ ] P7: Main window "Analyze My Games" UI
+- [ ] P8: Incremental analysis on startup
 
 ## V3 — Distribution
 - [ ] electron-builder NSIS installer (.exe)

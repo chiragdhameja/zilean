@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { CoachingGoals, CoachingStatus, ItemSuggestion, BackTiming } from '../../../shared/types'
+import { CoachingGoals, CoachingStatus, GameEvent, ItemSuggestion, BackTiming } from '../../../shared/types'
+import { EventFeed } from './components/EventFeed'
 import './styles/overlay.css'
 
 interface OverlayState {
@@ -86,6 +87,9 @@ export function Overlay(): JSX.Element {
     gameMode: null
   })
 
+  const [events, setEvents] = useState<GameEvent[]>([])
+  const [eventsCollapsed, setEventsCollapsed] = useState(true)
+
   const [bodyCollapsed, setBodyCollapsed] = useState(false)
 
   const [collapsed, setCollapsed] = useState<CollapsedState>({
@@ -148,6 +152,14 @@ export function Overlay(): JSX.Element {
     return cleanup
   }, [])
 
+  useEffect(() => {
+    if (!window.electronAPI?.onEventsUpdate) return
+    const cleanup = window.electronAPI.onEventsUpdate((update) => {
+      setEvents(update.events)
+    })
+    return cleanup
+  }, [])
+
   const toggle = (key: keyof CollapsedState): void =>
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }))
 
@@ -183,6 +195,13 @@ export function Overlay(): JSX.Element {
 
       {!bodyCollapsed && goals && (
         <>
+          {goals.matchupTip && (
+            <>
+              <div className="matchup-tip">{goals.matchupTip}</div>
+              <hr className="overlay-divider" />
+            </>
+          )}
+
           <div className="goals-section">
             <SectionHeader
               label="Personal"
@@ -244,6 +263,19 @@ export function Overlay(): JSX.Element {
               <hr className="overlay-divider" />
               <div className="overlay-footer">
                 <span className="error-badge">{lastError}</span>
+              </div>
+            </>
+          )}
+
+          {events.length > 0 && (
+            <>
+              <hr className="overlay-divider" />
+              <div className="goals-section">
+                <div className="section-header" onClick={() => setEventsCollapsed((v) => !v)}>
+                  <span className="goals-label">Events</span>
+                  <span className="section-chevron">{eventsCollapsed ? '▸' : '▾'}</span>
+                </div>
+                {!eventsCollapsed && <EventFeed events={events} maxDisplay={5} />}
               </div>
             </>
           )}

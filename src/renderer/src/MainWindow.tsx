@@ -1,7 +1,19 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
+import { GameEvent } from '../../../shared/types'
+import { EventFeed } from './components/EventFeed'
 import './styles/main.css'
 
 export function MainWindow(): JSX.Element {
+  const [events, setEvents] = useState<GameEvent[]>([])
+
+  useEffect(() => {
+    if (!window.electronAPI?.onEventsUpdate) return
+    const cleanup = window.electronAPI.onEventsUpdate((update) => {
+      setEvents(update.events)
+    })
+    return cleanup
+  }, [])
+
   return (
     <div className="main-window">
       <div className="main-header">
@@ -24,10 +36,13 @@ export function MainWindow(): JSX.Element {
         </div>
       </div>
 
-      <div className="main-v2-placeholder">
-        <p>V2 — Historical Analysis</p>
-        <button disabled className="btn-disabled">Analyze My Games</button>
-        <p className="placeholder-note">Coming soon</p>
+      <div className="events-panel">
+        <h2>Live Events</h2>
+        {events.length === 0 ? (
+          <p className="no-events">No events — waiting for game...</p>
+        ) : (
+          <EventFeed events={events} maxDisplay={20} className="events-list" />
+        )}
       </div>
     </div>
   )

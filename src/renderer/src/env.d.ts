@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import { AppSettings, CoachingUpdate } from '../../../shared/types'
+import { AppSettings, CoachingUpdate, EventsUpdate } from '../../../shared/types'
 
 interface ElectronAPI {
   getSettings: () => Promise<AppSettings>
@@ -8,6 +8,8 @@ interface ElectronAPI {
   toggleOverlay: () => Promise<void>
   onCoachingUpdate: (callback: (update: CoachingUpdate) => void) => () => void
   resizeOverlay: (height: number) => void
+  onEventsUpdate: (callback: (update: EventsUpdate) => void) => () => void
+  dumpSwagger: () => Promise<{ success: boolean; error?: string }>
 }
 
 declare global {

@@ -15,23 +15,44 @@ vi.mock('@anthropic-ai/sdk', () => {
 const mockGameState: GameState = {
   champion: 'Zed',
   role: 'MID',
+  gameMode: 'CLASSIC',
   gameTime: '10:00',
   kills: 5,
   deaths: 1,
   assists: 2,
   gold: 3000,
   teamGoldDiff: 500,
-  recentEvents: ['DragonKill'],
-  summonerName: 'TestPlayer'
+  recentEvents: [{ name: 'DragonKill', time: 300, relativeTime: '30s ago', category: 'objective' }],
+  summonerName: 'TestPlayer',
+  items: [{ displayName: 'Long Sword', itemID: 1036, slot: 0, count: 1, price: 350 }],
+  abilities: {
+    q: { displayName: 'Razor Shuriken', level: 3 },
+    w: { displayName: 'Living Shadow', level: 1 },
+    e: { displayName: 'Shadow Slash', level: 2 },
+    r: { displayName: 'Death Mark', level: 1 },
+    passive: { displayName: 'Contempt for the Weak' }
+  },
+  runes: { keystone: 'Electrocute', primaryTree: 'Domination', secondaryTree: 'Sorcery' },
+  summonerSpells: { spell1: 'Flash', spell2: 'Ignite' },
+  laneOpponent: { championName: 'Ahri', kills: 2, deaths: 1, assists: 3 },
+  allies: [
+    { championName: 'Jinx', items: ['Kraken Slayer'], level: 9 },
+    { championName: 'Thresh', items: [], level: 8 }
+  ],
+  enemies: [
+    { championName: 'Ahri', items: ['Luden\'s Tempest'], level: 9 },
+    { championName: 'Yasuo', items: ['Immortal Shieldbow'], level: 10 }
+  ]
 }
 
-const validResponse = {
+const validResponse: CoachingGoals = {
   personalGoals: ['Focus on last-hitting under tower', 'Track enemy jungler'],
   personalTag: 'Farm',
   teamGoals: ['Contest dragon at 12 min', 'Push mid after skirmish'],
   teamTag: 'Dragon',
   gamePhase: 'early' as const,
-  updatedAt: '10:00'
+  updatedAt: '10:00',
+  matchupTip: 'Poke Ahri before she hits six to deny roam pressure.'
 }
 
 describe('generateCoaching', () => {
@@ -68,7 +89,8 @@ describe('generateCoaching', () => {
       personalGoals: expect.any(Array),
       teamGoals: expect.any(Array),
       gamePhase: expect.stringMatching(/^(early|mid|late)$/),
-      updatedAt: expect.any(String)
+      updatedAt: expect.any(String),
+      matchupTip: expect.any(String)
     })
   })
 
@@ -174,5 +196,99 @@ describe('generateCoaching', () => {
     const userContent = callArgs.messages[0].content
     expect(userContent).toContain('Historical patterns')
     expect(userContent).toContain('overextended')
+  })
+
+  it('requires matchupTip in response', async () => {
+    const noTip = { ...validResponse }
+    delete (noTip as Partial<CoachingGoals>).matchupTip
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(noTip) }]
+    })
+
+    await expect(generateCoaching(mockGameState)).rejects.toThrow('matchupTip')
+  })
+
+  it('throws when matchupTip is empty string', async () => {
+    const emptyTip = { ...validResponse, matchupTip: '' }
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(emptyTip) }]
+    })
+
+    await expect(generateCoaching(mockGameState)).rejects.toThrow('matchupTip')
+  })
+
+  it('throws when matchupTip exceeds 20 words', async () => {
+    const longTip = { ...validResponse, matchupTip: 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one' }
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(longTip) }]
+    })
+
+    await expect(generateCoaching(mockGameState)).rejects.toThrow('matchupTip')
+  })
+
+  it('accepts matchupTip of exactly 16 words (previously failing)', async () => {
+    const tip16 = { ...validResponse, matchupTip: 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen' }
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(tip16) }]
+    })
+
+    const result = await generateCoaching(mockGameState)
+    expect(result.matchupTip).toBeTruthy()
+  })
+
+  it('includes items and abilities in prompt', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(validResponse) }]
+    })
+
+    await generateCoaching(mockGameState)
+
+    const callArgs = mockCreate.mock.calls[0][0]
+    const userContent = callArgs.messages[0].content
+    expect(userContent).toContain('Long Sword')
+    expect(userContent).toContain('Q(3)')
+    expect(userContent).toContain('Electrocute')
+    expect(userContent).toContain('Flash + Ignite')
+    expect(userContent).toContain('Ahri')
+  })
+
+  it('includes ally and enemy team context in prompt', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(validResponse) }]
+    })
+
+    await generateCoaching(mockGameState)
+
+    const callArgs = mockCreate.mock.calls[0][0]
+    const userContent = callArgs.messages[0].content
+    expect(userContent).toContain('Jinx')
+    expect(userContent).toContain('Kraken Slayer')
+    expect(userContent).toContain('Yasuo')
+    expect(userContent).toContain('Immortal Shieldbow')
+    expect(userContent).toContain('Ally Team')
+    expect(userContent).toContain('Enemy Team')
+  })
+
+  it('uses event detail strings in prompt when available', async () => {
+    const stateWithDetailEvents = {
+      ...mockGameState,
+      recentEvents: [{
+        name: 'DragonKill',
+        time: 300,
+        relativeTime: '30s ago',
+        category: 'objective' as const,
+        detail: 'Enemy team took Fire Dragon'
+      }]
+    }
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(validResponse) }]
+    })
+
+    await generateCoaching(stateWithDetailEvents)
+
+    const callArgs = mockCreate.mock.calls[0][0]
+    const userContent = callArgs.messages[0].content
+    expect(userContent).toContain('Enemy team took Fire Dragon')
+    expect(userContent).not.toContain('DragonKill')
   })
 })
