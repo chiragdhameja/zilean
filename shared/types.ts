@@ -165,4 +165,6 @@ export interface AppSettings {
   showLiveStats: boolean
   showEventFeed: boolean
   showMatchupTip: boolean
+  overlayX?: number
+  overlayY?: number
 }
