@@ -42,7 +42,10 @@ const mockGameState: GameState = {
   enemies: [
     { championName: 'Ahri', items: ['Luden\'s Tempest'], level: 9 },
     { championName: 'Yasuo', items: ['Immortal Shieldbow'], level: 10 }
-  ]
+  ],
+  cs: 72,
+  wardScore: 15,
+  level: 9
 }
 
 const validResponse: CoachingGoals = {
@@ -56,7 +59,7 @@ const validResponse: CoachingGoals = {
 }
 
 describe('generateCoaching', () => {
-  let generateCoaching: (state: GameState, ctx?: string) => Promise<CoachingGoals>
+  let generateCoaching: (state: GameState, ctx?: string, aiModel?: string) => Promise<CoachingGoals>
   let mockCreate: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
@@ -248,11 +251,11 @@ describe('generateCoaching', () => {
     expect(userContent).toContain('Long Sword')
     expect(userContent).toContain('Q(3)')
     expect(userContent).toContain('Electrocute')
-    expect(userContent).toContain('Flash + Ignite')
+    expect(userContent).toContain('Flash+Ignite')
     expect(userContent).toContain('Ahri')
   })
 
-  it('includes ally and enemy team context in prompt', async () => {
+  it('includes ally and enemy team context in compact format', async () => {
     mockCreate.mockResolvedValueOnce({
       content: [{ type: 'text', text: JSON.stringify(validResponse) }]
     })
@@ -261,12 +264,49 @@ describe('generateCoaching', () => {
 
     const callArgs = mockCreate.mock.calls[0][0]
     const userContent = callArgs.messages[0].content
-    expect(userContent).toContain('Jinx')
-    expect(userContent).toContain('Kraken Slayer')
-    expect(userContent).toContain('Yasuo')
-    expect(userContent).toContain('Immortal Shieldbow')
-    expect(userContent).toContain('Ally Team')
-    expect(userContent).toContain('Enemy Team')
+    // Compact format: "Jinx(9), Thresh(8)" — champion name + level, no item lists
+    expect(userContent).toContain('Jinx(9)')
+    expect(userContent).toContain('Yasuo(10)')
+    expect(userContent).toContain('Allies')
+    expect(userContent).toContain('Enemies')
+    // Items should NOT appear in compact team context
+    expect(userContent).not.toContain('Kraken Slayer')
+    expect(userContent).not.toContain('Immortal Shieldbow')
+  })
+
+  it('uses specified aiModel when provided', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(validResponse) }]
+    })
+
+    await generateCoaching(mockGameState, undefined, 'claude-haiku-4-5-20251001')
+
+    const callArgs = mockCreate.mock.calls[0][0]
+    expect(callArgs.model).toBe('claude-haiku-4-5-20251001')
+  })
+
+  it('falls back to default model when aiModel not provided', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(validResponse) }]
+    })
+
+    await generateCoaching(mockGameState)
+
+    const callArgs = mockCreate.mock.calls[0][0]
+    expect(callArgs.model).toBe('claude-sonnet-4-6')
+  })
+
+  it('includes CS and level in prompt', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify(validResponse) }]
+    })
+
+    await generateCoaching(mockGameState)
+
+    const callArgs = mockCreate.mock.calls[0][0]
+    const userContent = callArgs.messages[0].content
+    expect(userContent).toContain('CS 72')
+    expect(userContent).toContain('Lv9')
   })
 
   it('uses event detail strings in prompt when available', async () => {

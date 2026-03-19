@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { AppSettings, CoachingUpdate, EventsUpdate } from '../../shared/types'
+import { AppSettings, CoachingUpdate, EventsUpdate, LiveStatsUpdate } from '../../shared/types'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('get-settings'),
@@ -23,6 +23,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       callback(update)
     ipcRenderer.on('events-update', handler)
     return () => ipcRenderer.removeListener('events-update', handler)
+  },
+
+  onLiveStatsUpdate: (callback: (update: LiveStatsUpdate) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, update: LiveStatsUpdate): void =>
+      callback(update)
+    ipcRenderer.on('live-stats-update', handler)
+    return () => ipcRenderer.removeListener('live-stats-update', handler)
+  },
+
+  onNavigateTo: (callback: (view: string) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, view: string): void => callback(view)
+    ipcRenderer.on('navigate-to', handler)
+    return () => ipcRenderer.removeListener('navigate-to', handler)
   },
 
   dumpSwagger: (): Promise<{ success: boolean; error?: string }> =>

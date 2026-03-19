@@ -1,5 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { CoachingGoals, CoachingStatus, GameEvent, ItemSuggestion, BackTiming } from '../../../shared/types'
+import {
+  AppSettings,
+  CoachingGoals,
+  CoachingStatus,
+  GameEvent,
+  ItemSuggestion,
+  BackTiming,
+  LiveStats
+} from '../../../shared/types'
 import { EventFeed } from './components/EventFeed'
 import './styles/overlay.css'
 
@@ -22,7 +30,7 @@ const GAME_MODE_LABELS: Record<string, string> = {
   PRACTICETOOL: 'Practice',
   TUTORIAL_MODULE_1: 'Tutorial',
   TUTORIAL_MODULE_2: 'Tutorial',
-  TUTORIAL_MODULE_3: 'Tutorial',
+  TUTORIAL_MODULE_3: 'Tutorial'
 }
 
 function formatGameMode(mode: string): string {
@@ -77,6 +85,20 @@ function BackContent({ backTiming }: { backTiming: BackTiming }): JSX.Element {
   )
 }
 
+function LiveStatsRow({ stats }: { stats: LiveStats }): JSX.Element {
+  return (
+    <div className="live-stats-row">
+      <span className="stat-item">KDA {stats.kdaRatio.toFixed(1)}</span>
+      <span className="stat-sep">·</span>
+      <span className="stat-item">CS/m {stats.csPerMin.toFixed(1)}</span>
+      <span className="stat-sep">·</span>
+      <span className="stat-item">KP {stats.killParticipation}%</span>
+      <span className="stat-sep">·</span>
+      <span className="stat-item">G/m {stats.goldPerMin}</span>
+    </div>
+  )
+}
+
 export function Overlay(): JSX.Element {
   const [state, setState] = useState<OverlayState>({
     goals: null,
@@ -89,8 +111,9 @@ export function Overlay(): JSX.Element {
 
   const [events, setEvents] = useState<GameEvent[]>([])
   const [eventsCollapsed, setEventsCollapsed] = useState(true)
-
   const [bodyCollapsed, setBodyCollapsed] = useState(false)
+  const [liveStats, setLiveStats] = useState<LiveStats | null>(null)
+  const [settings, setSettings] = useState<AppSettings | null>(null)
 
   const [collapsed, setCollapsed] = useState<CollapsedState>({
     personal: true,
@@ -102,10 +125,13 @@ export function Overlay(): JSX.Element {
   const cardRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    window.electronAPI?.getSettings().then((s) => setSettings(s))
+  }, [])
+
+  useEffect(() => {
     if (!cardRef.current || !window.electronAPI?.resizeOverlay) return
     const ro = new ResizeObserver(() => {
       if (!cardRef.current) return
-      // offsetHeight includes padding + border, matching the true rendered height
       window.electronAPI?.resizeOverlay(cardRef.current.offsetHeight)
     })
     ro.observe(cardRef.current)
@@ -118,7 +144,14 @@ export function Overlay(): JSX.Element {
     const cleanup = window.electronAPI.onCoachingUpdate((update) => {
       setState((prev) => {
         if (update.status === 'waiting') {
-          return { goals: null, status: 'waiting', isRefreshing: false, lastError: null, champion: null, gameMode: null }
+          return {
+            goals: null,
+            status: 'waiting',
+            isRefreshing: false,
+            lastError: null,
+            champion: null,
+            gameMode: null
+          }
         }
 
         const champion = update.champion ?? prev.champion
@@ -160,15 +193,30 @@ export function Overlay(): JSX.Element {
     return cleanup
   }, [])
 
+  useEffect(() => {
+    if (!window.electronAPI?.onLiveStatsUpdate) return
+    const cleanup = window.electronAPI.onLiveStatsUpdate((update) => {
+      setLiveStats(update.stats)
+    })
+    return cleanup
+  }, [])
+
   const toggle = (key: keyof CollapsedState): void =>
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }))
 
   const { goals, status, isRefreshing, lastError, champion, gameMode } = state
 
+  const showLiveStats = settings?.showLiveStats !== false
+  const showEventFeed = settings?.showEventFeed !== false
+  const showMatchupTip = settings?.showMatchupTip !== false
+
   if (status === 'waiting') {
     return (
       <div ref={cardRef} className="overlay-card">
-        <div className="overlay-header overlay-header--clickable" onClick={() => setBodyCollapsed((v) => !v)}>
+        <div
+          className="overlay-header overlay-header--clickable"
+          onClick={() => setBodyCollapsed((v) => !v)}
+        >
           <span>⚔ Zilean</span>
           <span className="header-chevron">{bodyCollapsed ? '▸' : '▾'}</span>
         </div>
@@ -183,7 +231,10 @@ export function Overlay(): JSX.Element {
 
   return (
     <div ref={cardRef} className={`overlay-card${isRefreshing ? ' refreshing' : ''}`}>
-      <div className="overlay-header overlay-header--clickable" onClick={() => setBodyCollapsed((v) => !v)}>
+      <div
+        className="overlay-header overlay-header--clickable"
+        onClick={() => setBodyCollapsed((v) => !v)}
+      >
         <span>{headerTitle}</span>
         <div className="overlay-header-right">
           {goals && <span className="phase-badge">{goals.gamePhase}</span>}
@@ -193,85 +244,105 @@ export function Overlay(): JSX.Element {
         </div>
       </div>
 
-      {!bodyCollapsed && goals && (
+      {!bodyCollapsed && (
         <>
-          {goals.matchupTip && (
+          {showLiveStats && liveStats && (
             <>
-              <div className="matchup-tip">{goals.matchupTip}</div>
+              <LiveStatsRow stats={liveStats} />
               <hr className="overlay-divider" />
             </>
           )}
 
-          <div className="goals-section">
-            <SectionHeader
-              label="Personal"
-              tag={goals.personalTag}
-              collapsed={collapsed.personal}
-              onToggle={() => toggle('personal')}
-            />
-            {!collapsed.personal && goals.personalGoals.map((g, i) => (
-              <div key={i} className="goal-item">{g}</div>
-            ))}
-          </div>
-
-          <hr className="overlay-divider" />
-
-          <div className="goals-section">
-            <SectionHeader
-              label="Team"
-              tag={goals.teamTag}
-              collapsed={collapsed.team}
-              onToggle={() => toggle('team')}
-            />
-            {!collapsed.team && goals.teamGoals.map((g, i) => (
-              <div key={i} className="goal-item">{g}</div>
-            ))}
-          </div>
-
-          {goals.item && (
+          {goals && (
             <>
-              <hr className="overlay-divider" />
+              {showMatchupTip && goals.matchupTip && (
+                <>
+                  <div className="matchup-tip">{goals.matchupTip}</div>
+                  <hr className="overlay-divider" />
+                </>
+              )}
+
               <div className="goals-section">
                 <SectionHeader
-                  label="Next Item"
-                  tag={goals.item.name}
-                  collapsed={collapsed.item}
-                  onToggle={() => toggle('item')}
+                  label="Personal"
+                  tag={goals.personalTag}
+                  collapsed={collapsed.personal}
+                  onToggle={() => toggle('personal')}
                 />
-                {!collapsed.item && <ItemContent item={goals.item} />}
+                {!collapsed.personal &&
+                  goals.personalGoals.map((g, i) => (
+                    <div key={i} className="goal-item">
+                      {g}
+                    </div>
+                  ))}
               </div>
-            </>
-          )}
 
-          {goals.backTiming && (
-            <>
               <hr className="overlay-divider" />
+
               <div className="goals-section">
                 <SectionHeader
-                  label="Back Timing"
-                  tag={`${goals.backTiming.goldTarget}g`}
-                  collapsed={collapsed.back}
-                  onToggle={() => toggle('back')}
+                  label="Team"
+                  tag={goals.teamTag}
+                  collapsed={collapsed.team}
+                  onToggle={() => toggle('team')}
                 />
-                {!collapsed.back && <BackContent backTiming={goals.backTiming} />}
+                {!collapsed.team &&
+                  goals.teamGoals.map((g, i) => (
+                    <div key={i} className="goal-item">
+                      {g}
+                    </div>
+                  ))}
               </div>
+
+              {goals.item && (
+                <>
+                  <hr className="overlay-divider" />
+                  <div className="goals-section">
+                    <SectionHeader
+                      label="Next Item"
+                      tag={goals.item.name}
+                      collapsed={collapsed.item}
+                      onToggle={() => toggle('item')}
+                    />
+                    {!collapsed.item && <ItemContent item={goals.item} />}
+                  </div>
+                </>
+              )}
+
+              {goals.backTiming && (
+                <>
+                  <hr className="overlay-divider" />
+                  <div className="goals-section">
+                    <SectionHeader
+                      label="Back Timing"
+                      tag={`${goals.backTiming.goldTarget}g`}
+                      collapsed={collapsed.back}
+                      onToggle={() => toggle('back')}
+                    />
+                    {!collapsed.back && <BackContent backTiming={goals.backTiming} />}
+                  </div>
+                </>
+              )}
+
+              {lastError && (
+                <>
+                  <hr className="overlay-divider" />
+                  <div className="overlay-footer">
+                    <span className="error-badge">{lastError}</span>
+                  </div>
+                </>
+              )}
             </>
           )}
 
-          {lastError && (
-            <>
-              <hr className="overlay-divider" />
-              <div className="overlay-footer">
-                <span className="error-badge">{lastError}</span>
-              </div>
-            </>
-          )}
-
-          {events.length > 0 && (
+          {showEventFeed && events.length > 0 && (
             <>
               <hr className="overlay-divider" />
               <div className="goals-section">
-                <div className="section-header" onClick={() => setEventsCollapsed((v) => !v)}>
+                <div
+                  className="section-header"
+                  onClick={() => setEventsCollapsed((v) => !v)}
+                >
                   <span className="goals-label">Events</span>
                   <span className="section-chevron">{eventsCollapsed ? '▸' : '▾'}</span>
                 </div>

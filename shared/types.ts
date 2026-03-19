@@ -60,6 +60,38 @@ export interface GameState {
   laneOpponent: LaneOpponent | null
   allies: ChampionContext[]   // all allied champions (excluding self)
   enemies: ChampionContext[]  // all enemy champions
+  cs: number          // creep score
+  wardScore: number   // vision score
+  level: number       // champion level
+}
+
+export interface LiveStats {
+  csPerMin: number
+  goldPerMin: number
+  kdaRatio: number
+  deathsPer10Min: number
+  killParticipation: number       // % 0-100
+  killShare: number               // % of team kills
+  assistShare: number
+  goldDiffTrend: 'gaining' | 'losing' | 'stable'
+  goldUnspent: number
+  totalGoldInItems: number
+  goldEfficiency: number          // % of total gold converted to items
+  wardsPlaced: number
+  wardsKilled: number
+  wardScore: number
+  dragonControl: number           // ally dragons / total dragons %
+  turretsDestroyed: number
+  inhibitorsDestroyed: number
+  timeAlivePercent: number
+  currentStreak: 'killing' | 'on fire' | 'none'
+  gamePhase: 'early' | 'mid' | 'late'
+  itemSlotsUsed: number
+  abilityPointsUsed: number
+}
+
+export interface LiveStatsUpdate {
+  stats: LiveStats
 }
 
 export interface ItemSuggestion {
@@ -104,4 +136,11 @@ export interface AppSettings {
   overlayVisible: boolean
   summonerName?: string
   overlayTheme: 'lol-native' | 'minimal' | 'sidebar'
+  aiModel: string                        // claude-haiku-4-5-20251001 | claude-sonnet-4-6 | claude-opus-4-6
+  coachingIntervalSecs: number           // 60 | 90 | 120 | 180 | 300
+  eventCoachingEnabled: boolean
+  eventCoachingSensitivity: 'major' | 'all'  // major = baron/dragon/inhib; all = + kills
+  showLiveStats: boolean
+  showEventFeed: boolean
+  showMatchupTip: boolean
 }

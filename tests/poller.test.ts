@@ -5,7 +5,9 @@ import {
   detectMeaningfulChange,
   formatRelativeTime,
   findLaneOpponent,
-  computeEventDetail
+  computeEventDetail,
+  hasStateChangedSince,
+  resetFingerprintState
 } from '../electron/main/poller'
 import type { GameState, GameEvent } from '../shared/types'
 
@@ -19,10 +21,10 @@ const mockEvents = [
 ]
 
 const mockPlayers = [
-  { summonerName: 'TestPlayer', team: 'ORDER', currentGold: 3000, championName: 'Zed', position: 'MID', scores: { kills: 5, deaths: 1, assists: 2 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Ignite' } } },
-  { summonerName: 'Ally2', team: 'ORDER', currentGold: 2500, championName: 'Jinx', position: 'BOT', scores: { kills: 3, deaths: 0, assists: 4 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Heal' } } },
-  { summonerName: 'Enemy1', team: 'CHAOS', currentGold: 2000, championName: 'Ahri', position: 'MID', scores: { kills: 2, deaths: 2, assists: 1 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Ignite' } } },
-  { summonerName: 'Enemy2', team: 'CHAOS', currentGold: 1800, championName: 'Caitlyn', position: 'BOT', scores: { kills: 1, deaths: 3, assists: 0 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Heal' } } }
+  { summonerName: 'TestPlayer', team: 'ORDER', currentGold: 3000, championName: 'Zed', position: 'MID', scores: { kills: 5, deaths: 1, assists: 2, creepScore: 80, wardScore: 20 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Ignite' } } },
+  { summonerName: 'Ally2', team: 'ORDER', currentGold: 2500, championName: 'Jinx', position: 'BOT', scores: { kills: 3, deaths: 0, assists: 4, creepScore: 100, wardScore: 10 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Heal' } } },
+  { summonerName: 'Enemy1', team: 'CHAOS', currentGold: 2000, championName: 'Ahri', position: 'MID', scores: { kills: 2, deaths: 2, assists: 1, creepScore: 70, wardScore: 15 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Ignite' } } },
+  { summonerName: 'Enemy2', team: 'CHAOS', currentGold: 1800, championName: 'Caitlyn', position: 'BOT', scores: { kills: 1, deaths: 3, assists: 0, creepScore: 90, wardScore: 8 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Heal' } } }
 ]
 
 const makeEvent = (name: string, time: number, relativeTime: string): GameEvent => ({
@@ -62,7 +64,10 @@ const baseGameState: GameState = {
   summonerSpells: { spell1: 'Flash', spell2: 'Ignite' },
   laneOpponent: { championName: 'Ahri', kills: 2, deaths: 2, assists: 1 },
   allies: [{ championName: 'Jinx', items: [], level: 8 }],
-  enemies: [{ championName: 'Ahri', items: [], level: 8 }, { championName: 'Caitlyn', items: [], level: 7 }]
+  enemies: [{ championName: 'Ahri', items: [], level: 8 }, { championName: 'Caitlyn', items: [], level: 7 }],
+  cs: 50,
+  wardScore: 15,
+  level: 8
 }
 
 describe('extractRecentEvents', () => {
@@ -170,10 +175,10 @@ describe('computeTeamGoldDiff', () => {
 
   it('computes negative diff when enemy team is ahead', () => {
     const enemyAheadPlayers = [
-      { summonerName: 'TestPlayer', team: 'ORDER', currentGold: 1000, championName: 'Zed', position: 'MID', scores: { kills: 0, deaths: 3, assists: 0 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Ignite' } } },
-      { summonerName: 'Ally2', team: 'ORDER', currentGold: 800, championName: 'Jinx', position: 'BOT', scores: { kills: 1, deaths: 2, assists: 1 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Heal' } } },
-      { summonerName: 'Enemy1', team: 'CHAOS', currentGold: 3000, championName: 'Ahri', position: 'MID', scores: { kills: 5, deaths: 0, assists: 3 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Ignite' } } },
-      { summonerName: 'Enemy2', team: 'CHAOS', currentGold: 2500, championName: 'Caitlyn', position: 'BOT', scores: { kills: 4, deaths: 0, assists: 2 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Heal' } } }
+      { summonerName: 'TestPlayer', team: 'ORDER', currentGold: 1000, championName: 'Zed', position: 'MID', scores: { kills: 0, deaths: 3, assists: 0, creepScore: 30, wardScore: 5 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Ignite' } } },
+      { summonerName: 'Ally2', team: 'ORDER', currentGold: 800, championName: 'Jinx', position: 'BOT', scores: { kills: 1, deaths: 2, assists: 1, creepScore: 40, wardScore: 4 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Heal' } } },
+      { summonerName: 'Enemy1', team: 'CHAOS', currentGold: 3000, championName: 'Ahri', position: 'MID', scores: { kills: 5, deaths: 0, assists: 3, creepScore: 90, wardScore: 18 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Ignite' } } },
+      { summonerName: 'Enemy2', team: 'CHAOS', currentGold: 2500, championName: 'Caitlyn', position: 'BOT', scores: { kills: 4, deaths: 0, assists: 2, creepScore: 110, wardScore: 12 }, items: [], summonerSpells: { summonerSpellOne: { displayName: 'Flash' }, summonerSpellTwo: { displayName: 'Heal' } } }
     ]
     const diff = computeTeamGoldDiff(enemyAheadPlayers, 'TestPlayer')
     // ORDER: 1000+800=1800, CHAOS: 3000+2500=5500 → diff = -3700
@@ -205,7 +210,7 @@ describe('findLaneOpponent', () => {
   it('returns null when no enemy has the same position', () => {
     const mismatchPlayers = mockPlayers.map((p, i) =>
       i === 2 ? { ...p, position: 'TOP' } : p  // Enemy1 now plays TOP instead of MID
-    )
+    ) as typeof mockPlayers
     const result = findLaneOpponent(mismatchPlayers, 'TestPlayer')
     expect(result).toBeNull()
   })
@@ -353,5 +358,83 @@ describe('detectMeaningfulChange', () => {
   it('returns false when no meaningful changes', () => {
     const next = { ...baseGameState }
     expect(detectMeaningfulChange(baseGameState, next)).toBe(false)
+  })
+})
+
+describe('hasStateChangedSince (fingerprinting)', () => {
+  it('returns true on first call (no previous fingerprint)', () => {
+    resetFingerprintState()
+    expect(hasStateChangedSince(baseGameState)).toBe(true)
+  })
+
+  it('returns false when state is identical on second call', () => {
+    resetFingerprintState()
+    hasStateChangedSince(baseGameState) // seed the fingerprint
+    expect(hasStateChangedSince({ ...baseGameState })).toBe(false)
+  })
+
+  it('returns true when kills change', () => {
+    resetFingerprintState()
+    hasStateChangedSince(baseGameState)
+    expect(hasStateChangedSince({ ...baseGameState, kills: 6 })).toBe(true)
+  })
+
+  it('returns true when deaths change', () => {
+    resetFingerprintState()
+    hasStateChangedSince(baseGameState)
+    expect(hasStateChangedSince({ ...baseGameState, deaths: 2 })).toBe(true)
+  })
+
+  it('returns true when CS changes', () => {
+    resetFingerprintState()
+    hasStateChangedSince(baseGameState)
+    expect(hasStateChangedSince({ ...baseGameState, cs: 55 })).toBe(true)
+  })
+
+  it('returns true when items change (new item)', () => {
+    resetFingerprintState()
+    hasStateChangedSince(baseGameState)
+    const withItem = {
+      ...baseGameState,
+      items: [{ displayName: 'Serylda\'s Grudge', itemID: 6694, slot: 0, count: 1, price: 3200 }]
+    }
+    expect(hasStateChangedSince(withItem)).toBe(true)
+  })
+
+  it('returns true when R level changes', () => {
+    resetFingerprintState()
+    hasStateChangedSince(baseGameState)
+    const withR2 = {
+      ...baseGameState,
+      abilities: { ...baseGameState.abilities, r: { displayName: 'Death Mark', level: 2 } }
+    }
+    expect(hasStateChangedSince(withR2)).toBe(true)
+  })
+
+  it('returns true when 2-min game time bucket changes', () => {
+    resetFingerprintState()
+    hasStateChangedSince(baseGameState) // gameTime = '10:00' → bucket 3 (600/120=5)
+    expect(hasStateChangedSince({ ...baseGameState, gameTime: '12:00' })).toBe(true)
+  })
+
+  it('returns false within the same 2-min bucket', () => {
+    resetFingerprintState()
+    hasStateChangedSince(baseGameState) // gameTime '10:00' = 600s → bucket 5
+    // '10:30' = 630s → same bucket 5
+    expect(hasStateChangedSince({ ...baseGameState, gameTime: '10:30' })).toBe(false)
+  })
+
+  it('returns true when gold crosses a 500g bucket boundary', () => {
+    resetFingerprintState()
+    hasStateChangedSince(baseGameState) // gold = 3000 → bucket 6
+    expect(hasStateChangedSince({ ...baseGameState, gold: 3500 })).toBe(true)
+  })
+
+  it('resetFingerprintState allows first call to return true again', () => {
+    resetFingerprintState()
+    hasStateChangedSince(baseGameState)
+    hasStateChangedSince(baseGameState) // now false
+    resetFingerprintState()
+    expect(hasStateChangedSince(baseGameState)).toBe(true)
   })
 })

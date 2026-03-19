@@ -7,7 +7,14 @@ const DEFAULT_SETTINGS: AppSettings = {
   anthropicApiKey: '',
   overlayVisible: true,
   summonerName: '',
-  overlayTheme: 'lol-native'
+  overlayTheme: 'lol-native',
+  aiModel: 'claude-sonnet-4-6',
+  coachingIntervalSecs: 90,
+  eventCoachingEnabled: true,
+  eventCoachingSensitivity: 'major',
+  showLiveStats: true,
+  showEventFeed: true,
+  showMatchupTip: true
 }
 
 function getSettingsPath(): string {

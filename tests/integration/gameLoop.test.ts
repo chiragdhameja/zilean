@@ -73,7 +73,10 @@ const mockGameState: GameState = {
   summonerSpells: { spell1: 'Flash', spell2: 'Ignite' },
   laneOpponent: null,
   allies: [],
-  enemies: []
+  enemies: [],
+  cs: 40,
+  wardScore: 10,
+  level: 7
 }
 
 const mockGoals: CoachingGoals = {

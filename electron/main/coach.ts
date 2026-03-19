@@ -1,24 +1,20 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { GameState, CoachingGoals } from '../../shared/types'
+import { GameState, CoachingGoals, ChampionContext } from '../../shared/types'
 
-const MODEL = 'claude-sonnet-4-6'
-const MAX_TOKENS = 900
+const DEFAULT_MODEL = 'claude-sonnet-4-6'
+const MAX_TOKENS = 700
+
+function formatChampCompact(c: ChampionContext): string {
+  return `${c.championName}(${c.level})`
+}
 
 function buildTeamContextSection(state: GameState): string {
-  const formatChamp = (c: { championName: string; items: string[] }): string => {
-    const items = c.items.length > 0 ? c.items.join(', ') : 'no items'
-    return `${c.championName} (${items})`
-  }
+  const allyStr =
+    state.allies.length > 0 ? state.allies.map(formatChampCompact).join(', ') : 'unknown'
+  const enemyStr =
+    state.enemies.length > 0 ? state.enemies.map(formatChampCompact).join(', ') : 'unknown'
 
-  const allyStr = state.allies.length > 0
-    ? state.allies.map(formatChamp).join('; ')
-    : 'unknown'
-  const enemyStr = state.enemies.length > 0
-    ? state.enemies.map(formatChamp).join('; ')
-    : 'unknown'
-
-  return `- Ally Team: ${allyStr}
-- Enemy Team: ${enemyStr}`
+  return `- Allies: ${allyStr}\n- Enemies: ${enemyStr}`
 }
 
 function buildMatchupTipInstruction(state: GameState): string {
@@ -27,15 +23,12 @@ function buildMatchupTipInstruction(state: GameState): string {
     : 'unknown opponent'
 
   if (state.abilities.r.level === 0 || parseGameTimeStr(state.gameTime) < 900) {
-    // Early game — lane-focused
-    return `In exactly one direct sentence (max 15 words), give the most important lane tip for playing ${state.champion} against ${opponentStr} right now. Be direct and specific.`
+    return `In one sentence (max 15 words), give the most important lane tip for ${state.champion} vs ${opponentStr}.`
   }
   if (parseGameTimeStr(state.gameTime) < 1800) {
-    // Mid game — rotations and skirmishes
-    return `In exactly one direct sentence (max 15 words), give the most important mid-game tip for ${state.champion} right now — focus on rotations, skirmishes, or objectives, not the lane. Be direct and specific.`
+    return `In one sentence (max 15 words), give the most important mid-game tip for ${state.champion} — rotations, skirmishes, or objectives.`
   }
-  // Late game — win conditions
-  return `In exactly one direct sentence (max 15 words), give the most important late-game tip for ${state.champion} right now — focus on teamfight positioning, win conditions, or objective control. Be direct and specific.`
+  return `In one sentence (max 15 words), give the most important late-game tip for ${state.champion} — teamfight, win conditions, or objectives.`
 }
 
 function parseGameTimeStr(gameTime: string): number {
@@ -47,22 +40,20 @@ function parseGameTimeStr(gameTime: string): number {
 }
 
 function buildPrompt(state: GameState, historicalContext?: string): string {
-  const eventsStr = state.recentEvents.length > 0
-    ? state.recentEvents.map((e) => e.detail ?? e.name).join('; ')
-    : 'none'
-  const goldDiffStr = state.teamGoldDiff >= 0
-    ? `+${state.teamGoldDiff}`
-    : `${state.teamGoldDiff}`
+  const eventsStr =
+    state.recentEvents.length > 0
+      ? state.recentEvents.map((e) => e.detail ?? e.name).join('; ')
+      : 'none'
+  const goldDiffStr = state.teamGoldDiff >= 0 ? `+${state.teamGoldDiff}` : `${state.teamGoldDiff}`
 
-  const itemsStr = state.items.length > 0
-    ? state.items.map((i) => i.displayName).join(', ')
-    : 'none'
+  const itemsStr =
+    state.items.length > 0 ? state.items.map((i) => i.displayName).join(', ') : 'none'
 
   const abilitiesStr = `Q(${state.abilities.q.level}) W(${state.abilities.w.level}) E(${state.abilities.e.level}) R(${state.abilities.r.level})`
 
-  const runesStr = `${state.runes.keystone} | ${state.runes.primaryTree} / ${state.runes.secondaryTree}`
+  const runesStr = `${state.runes.keystone} | ${state.runes.primaryTree}/${state.runes.secondaryTree}`
 
-  const spellsStr = `${state.summonerSpells.spell1} + ${state.summonerSpells.spell2}`
+  const spellsStr = `${state.summonerSpells.spell1}+${state.summonerSpells.spell2}`
 
   const opponentStr = state.laneOpponent
     ? `${state.laneOpponent.championName} (${state.laneOpponent.kills}/${state.laneOpponent.deaths}/${state.laneOpponent.assists})`
@@ -75,29 +66,20 @@ function buildPrompt(state: GameState, historicalContext?: string): string {
   const matchupTipInstruction = buildMatchupTipInstruction(state)
   const teamContext = buildTeamContextSection(state)
 
-  return `Game state:
-- Champion: ${state.champion}, Role: ${state.role}
-- Game time: ${state.gameTime}
-- Score: ${state.kills}/${state.deaths}/${state.assists}
-- Gold: ${state.gold}g
-- My Items: ${itemsStr}
-- Abilities: ${abilitiesStr}
-- Keystone: ${runesStr}
-- Summoner Spells: ${spellsStr}
-- Lane Opponent: ${opponentStr}
+  return `State: ${state.champion} ${state.role} ${state.gameTime} | ${state.kills}/${state.deaths}/${state.assists} | ${state.gold}g | CS ${state.cs} | Lv${state.level}
+Items: ${itemsStr}
+Abilities: ${abilitiesStr} | ${runesStr} | ${spellsStr}
+Opponent: ${opponentStr}
 ${teamContext}
-- Recent events: ${eventsStr}
-- Team gold difference: ${goldDiffStr}${historicalSection}
+Events: ${eventsStr} | Gold diff: ${goldDiffStr}${historicalSection}
 
 Generate coaching goals for the next 3 minutes.
-Suggest the single best next item purchase considering my current gold (${state.gold}g), what I've already built, the enemy team composition and what they are building, and the game phase.
-Suggest when to back (after which objective/wave, and the gold target to aim for).
-Omit item/backTiming fields if the game phase or state doesn't warrant it.
+Suggest the single best next item considering gold (${state.gold}g), items built, enemy comp, and game phase.
 ${matchupTipInstruction}
 Return ONLY valid JSON:
-{"personalGoals":["goal1","goal2"],"personalTag":"<1-2 word label>","teamGoals":["goal1","goal2"],"teamTag":"<1-2 word label>","gamePhase":"early|mid|late","updatedAt":"${state.gameTime}","matchupTip":"<1 sentence, max 20 words>","item":{"name":"<item>","reason":"<why>","goldNeeded":<int>},"backTiming":{"suggestion":"<when to back>","goldTarget":<int>}}
-personalTag and teamTag must be 1-2 words capturing the core theme (e.g. "Farm", "Roam", "Peel", "Vision").
-matchupTip must be present, exactly 1 sentence, max 20 words.
+{"personalGoals":["goal1","goal2"],"personalTag":"<1-2 word label>","teamGoals":["goal1","goal2"],"teamTag":"<1-2 word label>","gamePhase":"early|mid|late","updatedAt":"${state.gameTime}","matchupTip":"<1 sentence max 20 words>","item":{"name":"<item>","reason":"<why>","goldNeeded":<int>}}
+personalTag and teamTag: 1-2 words (e.g. "Farm", "Roam", "Peel").
+matchupTip: exactly 1 sentence, max 20 words.
 No explanation. No markdown. JSON only.`
 }
 
@@ -165,19 +147,21 @@ function validateCoachingGoals(obj: unknown): CoachingGoals {
 
 export async function generateCoaching(
   state: GameState,
-  historicalContext?: string
+  historicalContext?: string,
+  aiModel?: string
 ): Promise<CoachingGoals> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY is not set')
   }
 
+  const model = aiModel ?? DEFAULT_MODEL
   const client = new Anthropic({ apiKey })
 
   const message = await client.messages.create({
-    model: MODEL,
+    model,
     max_tokens: MAX_TOKENS,
-    system: `You are an expert League of Legends coach with deep knowledge of all roles, champions, itemization, and macro strategy. You analyze live game state and generate short actionable goals. Take recent events seriously — a Baron kill or team fight loss changes priorities immediately. When historical patterns are provided, weave them naturally into coaching goals with supporting evidence counts (e.g., "Avoid X — you did this in 6/10 similar games").`,
+    system: `You are an expert League of Legends coach. Analyze live game state and generate short actionable goals. Take recent events seriously — a Baron kill or team fight loss changes priorities immediately.`,
     messages: [
       {
         role: 'user',

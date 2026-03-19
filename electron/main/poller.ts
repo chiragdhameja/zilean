@@ -19,6 +19,9 @@ interface PlayerContext {
 }
 let cachedPlayerContext: PlayerContext | null = null
 
+// State fingerprinting — skip Claude when game state unchanged
+let lastFingerprint = ''
+
 const TRACKED_EVENTS = new Set([
   'DragonKill', 'BaronKill', 'TurretKilled', 'ChampionKill', 'InhibitorKilled',
   'ItemPurchased', 'WardPlaced', 'WardKilled', 'FirstBlood', 'GameStart', 'GameEnd'
@@ -50,7 +53,7 @@ interface RiotPlayerData {
   summonerName: string
   championName: string
   position: string
-  scores: { kills: number; deaths: number; assists: number }
+  scores: { kills: number; deaths: number; assists: number; creepScore: number; wardScore: number }
   currentGold: number
   team: string
   level?: number
@@ -391,6 +394,31 @@ export function detectMeaningfulChange(
   return false
 }
 
+function fingerprintState(s: GameState): string {
+  return [
+    s.kills,
+    s.deaths,
+    s.assists,
+    Math.floor(s.gold / 500),
+    Math.floor(s.teamGoldDiff / 500),
+    s.items.map((i) => i.itemID).sort().join(','),
+    s.abilities.r.level,
+    Math.floor(parseGameTime(s.gameTime) / 120),
+    s.cs
+  ].join('|')
+}
+
+export function hasStateChangedSince(state: GameState): boolean {
+  const fp = fingerprintState(state)
+  if (fp === lastFingerprint) return false
+  lastFingerprint = fp
+  return true
+}
+
+export function resetFingerprintState(): void {
+  lastFingerprint = ''
+}
+
 function getGamePhase(gameTime: string): 'early' | 'mid' | 'late' {
   const seconds = parseGameTime(gameTime)
   if (seconds < 900) return 'early'   // < 15 min
@@ -484,7 +512,10 @@ async function poll(callback: (state: GameState | null) => void): Promise<void> 
       },
       laneOpponent: findLaneOpponent(data.allPlayers, summonerName),
       allies,
-      enemies
+      enemies,
+      cs: activePlayerFull.scores.creepScore ?? 0,
+      wardScore: activePlayerFull.scores.wardScore ?? 0,
+      level: activePlayerFull.level ?? 1
     }
 
     callback(gameState)

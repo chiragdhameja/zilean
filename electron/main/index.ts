@@ -10,19 +10,41 @@ import {
 } from 'electron'
 import * as path from 'path'
 import * as dotenv from 'dotenv'
-import { startPolling, stopPolling, detectMeaningfulChange, pollEvents, resetEventState, triggerPoll, EVENT_POLL_INTERVAL_MS } from './poller'
+import {
+  startPolling,
+  stopPolling,
+  hasStateChangedSince,
+  resetFingerprintState,
+  pollEvents,
+  resetEventState,
+  triggerPoll,
+  EVENT_POLL_INTERVAL_MS
+} from './poller'
 import { generateCoaching } from './coach'
 import { loadSettings, saveSettings, storeSummonerName } from './settings'
+import { computeLiveStats } from './liveStats'
 import { dumpSwagger } from './swaggerDump'
-import { GameState, GameEvent, CoachingGoals, CoachingUpdate, EventsUpdate } from '../../shared/types'
+import {
+  GameState,
+  GameEvent,
+  CoachingGoals,
+  CoachingUpdate,
+  EventsUpdate,
+  LiveStatsUpdate,
+  AppSettings
+} from '../../shared/types'
 
 dotenv.config()
 
-const FORCE_INTERVAL_MS = 120_000 // 2 minutes
+// Major events trigger coaching regardless of sensitivity setting
+const MAJOR_EVENTS = new Set(['DragonKill', 'BaronKill', 'InhibitorKilled'])
+// All significant events (used when sensitivity = 'all')
+const ALL_SIGNIFICANT_EVENTS = new Set([
+  'ChampionKill', 'FirstBlood', 'DragonKill', 'BaronKill', 'InhibitorKilled'
+])
 
 let mainWindow: BrowserWindow | null = null
 let overlayWindow: BrowserWindow | null = null
-let settingsWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let hoverPollTimer: NodeJS.Timeout | null = null
 
@@ -32,15 +54,29 @@ let lastCoachTime = 0
 let allGameEvents: GameEvent[] = []
 let eventPollTimer: NodeJS.Timeout | null = null
 
+// Current runtime settings (refreshed on save)
+let runtimeSettings: AppSettings = loadSettings()
+
 // Event-triggered coaching: minimum gap between event-driven coach calls
 const EVENT_COACH_COOLDOWN_MS = 45_000
-const SIGNIFICANT_EVENTS = new Set(['ChampionKill', 'FirstBlood', 'DragonKill', 'BaronKill', 'InhibitorKilled'])
 let lastEventCoachTime = 0
+
+function getForceIntervalMs(): number {
+  return (runtimeSettings.coachingIntervalSecs ?? 90) * 1000
+}
+
+function getSignificantEventSet(): Set<string> {
+  return runtimeSettings.eventCoachingSensitivity === 'all'
+    ? ALL_SIGNIFICANT_EVENTS
+    : MAJOR_EVENTS
+}
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 480,
-    height: 640,
+    width: 980,
+    height: 720,
+    minWidth: 760,
+    minHeight: 520,
     title: 'Zilean — LoL Coach',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -95,38 +131,6 @@ function createOverlayWindow(): BrowserWindow {
   return win
 }
 
-function createSettingsWindow(): BrowserWindow {
-  if (settingsWindow && !settingsWindow.isDestroyed()) {
-    settingsWindow.focus()
-    return settingsWindow
-  }
-
-  const win = new BrowserWindow({
-    width: 500,
-    height: 400,
-    title: 'Zilean — Settings',
-    parent: mainWindow ?? undefined,
-    modal: false,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    }
-  })
-
-  if (process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?settings=true`)
-  } else {
-    win.loadFile(path.join(__dirname, '../renderer/index.html'), {
-      query: { settings: 'true' }
-    })
-  }
-
-  win.on('closed', () => { settingsWindow = null })
-  settingsWindow = win
-  return win
-}
-
 function createTray(): void {
   // Use a blank icon for now (no resources in scaffold)
   const icon = nativeImage.createEmpty()
@@ -143,7 +147,14 @@ function createTray(): void {
         }
       }
     },
-    { label: 'Settings', click: () => { settingsWindow = createSettingsWindow() } },
+    {
+      label: 'Settings',
+      click: () => {
+        mainWindow?.show()
+        mainWindow?.focus()
+        mainWindow?.webContents.send('navigate-to', 'settings')
+      }
+    },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() }
   ])
@@ -167,6 +178,17 @@ function broadcastEventsUpdate(events: GameEvent[]): void {
   }
 }
 
+function broadcastLiveStats(state: GameState): void {
+  const stats = computeLiveStats(state, allGameEvents)
+  const update: LiveStatsUpdate = { stats }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('live-stats-update', update)
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.webContents.send('live-stats-update', update)
+  }
+}
+
 function startEventPolling(): void {
   if (eventPollTimer) return
   eventPollTimer = setInterval(async () => {
@@ -175,8 +197,11 @@ function startEventPolling(): void {
       allGameEvents = [...allGameEvents, ...newEvents].slice(-100)
       broadcastEventsUpdate(allGameEvents)
 
+      if (!runtimeSettings.eventCoachingEnabled) return
+
       // Trigger immediate coaching update when significant events occur
-      const hasSignificant = newEvents.some((e) => SIGNIFICANT_EVENTS.has(e.name))
+      const significantSet = getSignificantEventSet()
+      const hasSignificant = newEvents.some((e) => significantSet.has(e.name))
       if (hasSignificant && Date.now() - lastEventCoachTime > EVENT_COACH_COOLDOWN_MS) {
         lastEventCoachTime = Date.now()
         console.log('[main] Significant event detected — triggering immediate coaching update')
@@ -193,6 +218,7 @@ async function handleGameState(gameState: GameState | null): Promise<void> {
       // Game just ended — reset event state and clear feed
       allGameEvents = []
       resetEventState()
+      resetFingerprintState()
       broadcastEventsUpdate([])
     }
     prevState = null
@@ -212,17 +238,27 @@ async function handleGameState(gameState: GameState | null): Promise<void> {
     }
   }
 
-  const changed = detectMeaningfulChange(prevState, gameState)
-  const forceDue = Date.now() - lastCoachTime > FORCE_INTERVAL_MS
+  // Always broadcast live stats on every poll (no Claude needed)
+  broadcastLiveStats(gameState)
 
-  if (!changed && !forceDue) return
+  const fingerprintChanged = hasStateChangedSince(gameState)
+  const forceDue = Date.now() - lastCoachTime > getForceIntervalMs()
+
+  if (!fingerprintChanged && !forceDue) {
+    prevState = gameState
+    return
+  }
 
   prevState = gameState
 
   const meta = { champion: gameState.champion, gameMode: gameState.gameMode }
 
   try {
-    const goals = await generateCoaching(gameState)
+    const goals = await generateCoaching(
+      gameState,
+      undefined,
+      runtimeSettings.aiModel
+    )
     cachedGoals = goals
     lastCoachTime = Date.now()
     sendOverlayUpdate({ status: 'active', goals, ...meta })
@@ -244,6 +280,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('save-settings', (_event, settings) => {
     saveSettings(settings)
+    runtimeSettings = settings
     // Apply API key immediately if provided
     if (settings.anthropicApiKey) {
       process.env.ANTHROPIC_API_KEY = settings.anthropicApiKey
@@ -271,6 +308,8 @@ function registerIpcHandlers(): void {
 }
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null)
+
   // Load API key from saved settings if not already in env
   if (!process.env.ANTHROPIC_API_KEY) {
     const saved = loadSettings()
@@ -293,8 +332,11 @@ app.whenReady().then(() => {
     if (!overlayWindow || overlayWindow.isDestroyed() || !overlayWindow.isVisible()) return
     const cursor = screen.getCursorScreenPoint()
     const bounds = overlayWindow.getBounds()
-    const isOver = cursor.x >= bounds.x && cursor.x <= bounds.x + bounds.width &&
-                   cursor.y >= bounds.y && cursor.y <= bounds.y + bounds.height
+    const isOver =
+      cursor.x >= bounds.x &&
+      cursor.x <= bounds.x + bounds.width &&
+      cursor.y >= bounds.y &&
+      cursor.y <= bounds.y + bounds.height
     if (isOver !== overlayInteractive) {
       overlayInteractive = isOver
       overlayWindow.setIgnoreMouseEvents(!isOver, { forward: true })
@@ -309,7 +351,9 @@ app.whenReady().then(() => {
   })
 
   globalShortcut.register('Alt+,', () => {
-    settingsWindow = createSettingsWindow()
+    mainWindow?.show()
+    mainWindow?.focus()
+    mainWindow?.webContents.send('navigate-to', 'settings')
   })
 
   // Start the game polling loops
