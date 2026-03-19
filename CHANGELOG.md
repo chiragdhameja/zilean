@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/rutvij26/zilean/compare/v1.2.0...v1.3.0) (2026-03-19)
+
+
+### Features
+
+* update toast, auto-update toggle, app version display ([8d16474](https://github.com/rutvij26/zilean/commit/8d1647468f8fbe59ecc752861354c6f60dacdf74))
+
 # [1.2.0](https://github.com/rutvij26/zilean/compare/v1.1.0...v1.2.0) (2026-03-19)
 
 
