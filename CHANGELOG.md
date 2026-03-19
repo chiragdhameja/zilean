@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/rutvij26/zilean/compare/v1.1.0...v1.2.0) (2026-03-19)
+
+
+### Features
+
+* draggable overlay with persistent position ([b607364](https://github.com/rutvij26/zilean/commit/b6073643d79b71f9fc4f46300f2bd17a91a3fc68))
+
 # [1.1.0](https://github.com/rutvij26/zilean/compare/v1.0.0...v1.1.0) (2026-03-19)
 
 
